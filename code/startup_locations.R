@@ -35,11 +35,11 @@ cs = st_read("data/census_shp_2012/israel_demog2012.shp") %>%
   # https://en.wikipedia.org/wiki/Israeli_Transverse_Mercator
   st_transform(2039)
 
-isr = getData("GADM", country = "ISR", level = 1) %>%
+isr = getData("GADM", country = "ISR", level = 1, path = "data") %>%
   st_as_sf %>%
   st_transform(2039)
 ccodes()[grep("Palest", ccodes()$NAME), ]
-pa = getData("GADM", country = "PSE", level = 0) %>%
+pa = getData("GADM", country = "PSE", level = 0, path = "data") %>%
   st_as_sf %>%
   st_transform(2039)
 # join the two countries 
