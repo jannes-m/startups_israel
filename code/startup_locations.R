@@ -25,80 +25,42 @@ library("raster")
 library("sf")
 library("lattice")
 library("latticeExtra")
+library("RPostgreSQL")
 
 # attach data
-d = read_excel("data/cleaned_xy.xlsx")
-
-# Israel and Palestina  
-cs = st_read("data/census_shp_2012/israel_demog2012.shp") %>%
-  # using Israel's CRS
-  # https://en.wikipedia.org/wiki/Israeli_Transverse_Mercator
-  st_transform(2039)
-
-isr = getData("GADM", country = "ISR", level = 1, path = "data") %>%
-  st_as_sf %>%
-  st_transform(2039)
-ccodes()[grep("Palest", ccodes()$NAME), ]
-pa = getData("GADM", country = "PSE", level = 0, path = "data") %>%
-  st_as_sf %>%
-  st_transform(2039)
-# join the two countries 
-isr = st_union(isr, pa)
-plot(st_geometry(cs))
-plot(st_geometry(isr), col = NA, add = TRUE, border = "red")
-# ok, more or less overlapping (Gaza strip is missing from cs, and Palestina as
-# well)
+conn = dbConnect(drv = PostgreSQL(), 
+                 user = "jannes",
+                 dbname = "qual_gis", 
+                 port = 5432,
+                 password = "incommunicado")
+RPostgreSQL::dbListTables(conn)
+# startup locations
+su = st_read(conn, query = "select * from israel.startups")
+# Israel/Palestine admin polygons
+isr = st_read(conn, query = "select * from israel.israel")
+dbDisconnect(conn)
 
 #**********************************************************
 # 2 DATA PREPARATION---------------------------------------
 #**********************************************************
 
-colSums(is.na(d))
-filter(d, is.na(founded)) %>%
-  dplyr::select(founded, created_date, update_date)
-# ok, get rid off them (-> ask Susann, if ok)
-d = filter(d, !is.na(founded))
-table(d$founded)  # 1, not very sensible
-d = filter(d, founded != 1)
-
-# have a look at the coordinates
-dplyr::filter(d, is.na(lat) | is.na(lon)) %>%
-  dplyr::select(lat, lon)
-# ok, remove
-d = filter(d, !(is.na(lat) | is.na(lon)))
-# ok, there are some wrong coordinates
-summary(d$lat)
-summary(d$lon)
-# convert to sf
-d = st_as_sf(d, coords = c("lon", "lat")) %>%
-  st_set_crs(4326) %>%
-  st_transform(2039)
-plot(st_geometry(d))
-plot(st_geometry(isr), add = TRUE, col = "red")
-# have a look at the points outside of Israel
-out = d[st_union(isr), op = sf::st_disjoint]
-plot(st_geometry(isr), col = NA)  # mmh, they should be inside isr
-plot(st_geometry(out), add = TRUE, pch = 16, col = "red") 
-# ok, neglect the two points for the moment 
-d = d[st_union(isr), ]
-
 # tree start-up phases
-# 1: -1997; 2: 1998-2010; 3: 2011-2018
-d$phase = cut(d$founded, breaks = c(0, 1997, 2010, 2018), 
-              labels = c(1997, 2010, 2018))
+# 1: -1989; 2: 1990-2007; 3: 2008-2018
+su$phase = cut(su$founded, breaks = c(0, 1989, 2007, 2018), 
+               labels = c(1989, 2007, 2018))
 # check
-filter(d, founded == 1997) %>% dplyr::select(founded, phase)  # looks good
+filter(su, founded == 1989) %>% dplyr::select(founded, phase)  # looks good
 
 # aggregate points into a raster of resolution 10 km
-b_box = st_bbox(d)
+b_box = st_bbox(su)
 r = raster(xmn = floor(b_box$xmin), xmx = ceiling(b_box$xmax),
            ymn = floor(b_box$ymin), ymx = ceiling(b_box$ymax), res = 10000,
-           crs = st_crs(d)$proj4string)
-r_1 = rasterize(filter(d, phase == 1997), r, field = "X__1", fun = "count")
+           crs = st_crs(su)$proj4string)
+r_1 = rasterize(filter(su, phase == 1989), r, field = "id", fun = "count")
 # r_1[is.na(r_1)] = 0
-r_2 = rasterize(filter(d, phase == 2010), r, field = "X__1", fun = "count")
+r_2 = rasterize(filter(su, phase == 2007), r, field = "id", fun = "count")
 # r_2[is.na(r_2)] = 0
-r_3 = rasterize(filter(d, phase == 2018), r, field = "X__1", fun = "count")
+r_3 = rasterize(filter(su, phase == 2018), r, field = "id", fun = "count")
 # r_3[is.na(r_3)] = 0
 # put everything into a raster stack and trim outer NAs
 s = trim(stack(list(r_1, r_2, r_3)))
@@ -116,7 +78,7 @@ pal = RColorBrewer::brewer.pal(7, "YlOrRd")
 
 # names(s) = c(expression("1901-1997"), "1998-2010", "2011-2018")
 # does not works as wanted -> transformed to X1901..1997
-p_1 = spplot(s, col.regions = pal, 
+p_1 = spplot(s, col.regions = pal, between = list(x = 0.5),
        colorkey = list(space = "right",
                        # labels specifies what to plot
                        # at specifies where to plot the labels
@@ -133,8 +95,7 @@ p_1 = spplot(s, col.regions = pal,
        # at COMMAND AGAIN NECESSARY AS WE PLOT A CONTINOUS VARIABLE!!!
        at = cuts, pretty = TRUE,
        strip = strip.custom(factor.levels = 
-                              c(paste0(min(d$founded), "-1997"), "1998-2010",
-                                "2011-2018")),
+                              c("<=1989", "1990-2007", "2008-2018")),
        sp.layout = list(
          list("sp.polygons", as(isr, "Spatial"), col = "lightgrey",
               first = FALSE))) 
