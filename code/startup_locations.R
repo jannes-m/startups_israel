@@ -32,7 +32,7 @@ conn = dbConnect(drv = PostgreSQL(),
                  user = "jannes",
                  dbname = "qual_gis", 
                  port = 5432,
-                 password = "incommunicado")
+                 password = "jannes")
 RPostgreSQL::dbListTables(conn)
 # startup locations
 su = st_read(conn, query = "select * from israel.startups")
