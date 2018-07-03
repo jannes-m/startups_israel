@@ -1,4 +1,4 @@
-# Filename: geocode_startups.R (2017-11-27)
+# Filename: geocode.R (2017-11-27)
 #
 # TO DO: Geocode startups
 #
@@ -10,7 +10,7 @@
 #
 # 1. ATTACH PACKAGES AND DATA
 # 2. GEOCODING
-# 3. RESULT
+# 3. GEOCODING ACC, INV, MNC
 #
 #**********************************************************
 # 1 ATTACH PACKAGES AND DATA-------------------------------
@@ -22,8 +22,6 @@ library("readxl")
 library("ggmap")
 library("data.table")
 library("xlsx")
-
-
 
 #**********************************************************
 # 2 GEOCODING STARTUPS-------------------------------------
@@ -43,23 +41,23 @@ for (i in start:end) {
   print(su$id[i])
   print(su$address[i])
   if (is.na(su$address[i])) {
-   add = data.frame(lon = NA, lat = NA)
+    add = data.frame(lon = NA, lat = NA)
   } else {
     Sys.sleep(sample(seq(7.4, 14.5, 0.1), 1))
     try({add = geocode(su$address[i], output = "more")})
-    x = 2
+    x = 4
     while (is.na(su$lon) & x > 0) {
       print(su$id[i])
       Sys.sleep(sample(seq(7.4, 14.5, 0.1), 1))
       try({add = geocode(su$address[i], output = "more")})
-      # just try three times
+      # try five times
       x = x - 1
     }
   }
   # return your output
   print(add)
   out_2 = data.table::rbindlist(list(out_2, add), fill = TRUE)
-  }
+}
 
 #out[id := 1:nrow(out)]
 out_2$id = start:(start + nrow(out_2) - 1)
@@ -77,7 +75,6 @@ table(out$loctype)
 
 # save the result
 # load(file = "images/geocode.Rdata")
-
 out = dplyr::select(out, id, lon, lat, type, loctype, route, street_number,
                     locality, country)
 res = inner_join(d, out, by = "id")
@@ -102,3 +99,29 @@ d = rbind(acc, inv, mnc)
 sum(is.na(d$address))  # 177 without address
 group_by(d, type) %>%
   summarize(missing_address = sum(is.na(address)))
+
+start = 1
+end = nrow(d)
+out = list()
+for (i in start:end) {
+  print(su$id[i])
+  print(su$address[i])
+  if (is.na(su$address[i])) {
+    add = data.frame(lon = NA, lat = NA)
+  } else {
+    Sys.sleep(sample(seq(7.4, 14.5, 0.1), 1))
+    try({add = geocode(su$address[i], output = "more")})
+    x = 4
+    while (is.na(su$lon) & x > 0) {
+      print(su$id[i])
+      Sys.sleep(sample(seq(7.4, 14.5, 0.1), 1))
+      try({add = geocode(su$address[i], output = "more")})
+      # try five times
+      x = x - 1
+    }
+  }
+  # return your output
+  print(add)
+  out = data.table::rbindlist(list(out, add), fill = TRUE)
+}
+
