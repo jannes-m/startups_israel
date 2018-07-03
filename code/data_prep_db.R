@@ -1,22 +1,27 @@
+# Filename: data_prep_db.R (2018-07-03)
+#
+# TO DO: Prepare data and put it into a PostgreSQL/PostGIS db
+#
+# Author(s): Jannes Muenchow
+#
+#**********************************************************
+# CONTENTS-------------------------------------------------
+#**********************************************************
+#
+# 1. ATTACH PACKAGES AND DATA
+# 2. DATA PREPARATION
+# 3. DB STUFF
+#
+#**********************************************************
+# 1 ATTACH PACKAGES AND DATA-------------------------------
+#**********************************************************
+
+# attach packages
 library("RPostgreSQL")
 library("readxl")
 library("dplyr")
 library("sf")
 library("raster")
-# attach data
-# read in start-ups (su)
-su = read_excel("data/20180328 Datensatz Masterarbeit_cleaned_geocode.xlsx")
-# israel polygons
-isr = getData("GADM", country = "ISR", level = 1, path = "data") %>%
-  st_as_sf %>%
-  st_transform(2039)
-ccodes()[grep("Palest", ccodes()$NAME), ]
-pa = getData("GADM", country = "PSE", level = 0, path = "data") %>%
-  st_as_sf %>%
-  st_transform(2039)
-# join the two countries 
-isr = st_union(isr, pa)
-plot(st_geometry(isr), col = NA, border = "red")
 
 #**********************************************************
 # 2 DATA PREPARATION---------------------------------------
@@ -24,6 +29,9 @@ plot(st_geometry(isr), col = NA, border = "red")
 
 # 2.1 startups=============================================
 #**********************************************************
+
+# read in start-ups (su)
+su = read_excel("data/20180328 Datensatz Masterarbeit_cleaned_geocode.xlsx")
 colSums(is.na(su))
 filter(su, is.na(founded)) %>%
   dplyr::select(founded, created_date, update_date)
@@ -60,8 +68,23 @@ plot(buf, add = TRUE)
 su = su[buf, ]
 dim(su)  # 6658, ok, perfect
 
+# 2.2 Israel/Palestine polygons============================
 #**********************************************************
-# DATABASE-------------------------------------------------
+# israel polygons
+isr = getData("GADM", country = "ISR", level = 1, path = "data") %>%
+  st_as_sf %>%
+  st_transform(2039)
+ccodes()[grep("Palest", ccodes()$NAME), ]
+pa = getData("GADM", country = "PSE", level = 0, path = "data") %>%
+  st_as_sf %>%
+  st_transform(2039)
+# join the two countries 
+isr = st_union(isr, pa)
+plot(st_geometry(isr), col = NA, border = "red")
+
+
+#**********************************************************
+# 3 DB STUFF-----------------------------------------------
 #**********************************************************
 
 # create qual_gis database
@@ -89,13 +112,13 @@ dbSendQuery(conn, "CREATE EXTENSION postgis;")
 # create a new schema
 dbSendQuery(conn, "CREATE SCHEMA israel;")
 
-# write the table into the schema israel with the table name "startups"
+# write su into the schema israel named "startups"
 st_write(su, conn, c("israel", "startups"))
 # or using RPostgreSQL
 # RPostgreSQL::dbWriteTable(conn = conn, name c("israel", "startups"), 
 #                           value = su)
 # check if you can load it back into R
-st_read(conn, query = "select * from israel.startups")  # ok, excellent
+# st_read(conn, query = "select * from israel.startups")  # ok, excellent
 
 # specify a primary key column
 dbSendQuery(conn, "ALTER TABLE israel.startups ADD PRIMARY KEY (id);")
