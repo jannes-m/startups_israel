@@ -157,3 +157,10 @@ dev.off()
 # r_all = STFDF(as(r_1, "SpatialPolygons"), time, as.data.frame(r_all))
 # library("RColorBrewer")
 # stplot(r_all[, , "layer"], yrs)
+
+
+# Tel Aviv hineinzoomen + Animation Plot der Investoren, multi-nationale U
+# (mnc), accelerator, start-ups bis 11.07.2018 ideas: 1. variogram start-ups for
+# different phases -> does autocorrelation change? + interpolation? 2. use
+# distance to mnc, accelerator, investors as predictors for spatially predicting
+# start-ups
