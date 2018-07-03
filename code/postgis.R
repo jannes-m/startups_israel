@@ -1,4 +1,3 @@
-
 library("RPostgreSQL")
 library("readxl")
 library("dplyr")
@@ -6,7 +5,7 @@ library("sf")
 library("raster")
 # attach data
 # read in start-ups (su)
-su = read_excel("data/20180328 Datensatz Masterarbeit.xlsx")
+su = read_excel("data/20180328 Datensatz Masterarbeit_cleaned_geocode.xlsx")
 # israel polygons
 isr = getData("GADM", country = "ISR", level = 1, path = "data") %>%
   st_as_sf %>%
@@ -69,8 +68,12 @@ dim(su)  # 6658, ok, perfect
 pg = dbDriver("PostgreSQL")
 # not sure why I cannot login as jannes... (I don't want connect to a db but
 # just to the server, maybe you have to use the postgres user for this...)
-# dbConnect(pg, user = "jannes", port = 5432, password = "incommunicado")
-conn = dbConnect(pg, user = "postgres", port = 5432, password = "incommunicado")
+# dbConnect(pg, user = "jannes", host = "localhost", port = 5432, password = "jannes")
+conn = dbConnect(pg, 
+                 user = "postgres",
+                 host = "localhost",
+                 port = 5432, 
+                 password = "postgres")
 # create a new database
 dbSendQuery(conn, "CREATE DATABASE qual_gis;")
 dbDisconnect(conn)
@@ -80,7 +83,7 @@ conn = dbConnect(drv = PostgreSQL(),
                  user = "jannes",
                  dbname = "qual_gis", 
                  port = 5432,
-                 password = "incommunicado")
+                 password = "jannes")
 # enable PostGIS extension
 dbSendQuery(conn, "CREATE EXTENSION postgis;")
 # create a new schema
