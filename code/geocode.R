@@ -100,22 +100,24 @@ sum(is.na(d$address))  # 177 without address
 group_by(d, type) %>%
   summarize(missing_address = sum(is.na(address)))
 
-start = 1
+out = readRDS("images/geocode_2.rds")
+start = nrow(out) + 1
 end = nrow(d)
-out = list()
+out_2 = list()
+d$id = 1:nrow(d)
 for (i in start:end) {
-  print(su$id[i])
-  print(su$address[i])
-  if (is.na(su$address[i])) {
+  print(d$id[i])
+  print(d$address[i])
+  if (is.na(d$address[i])) {
     add = data.frame(lon = NA, lat = NA)
   } else {
     Sys.sleep(sample(seq(7.4, 14.5, 0.1), 1))
-    try({add = geocode(su$address[i], output = "more")})
+    try({add = geocode(d$address[i], output = "more")})
     x = 4
-    while (is.na(su$lon) & x > 0) {
-      print(su$id[i])
+    while (is.na(add$lon) & x > 0) {
+      print(d$id[i])
       Sys.sleep(sample(seq(7.4, 14.5, 0.1), 1))
-      try({add = geocode(su$address[i], output = "more")})
+      try({add = geocode(d$address[i], output = "more")})
       # try five times
       x = x - 1
     }
@@ -123,5 +125,7 @@ for (i in start:end) {
   # return your output
   print(add)
   out = data.table::rbindlist(list(out, add), fill = TRUE)
+  out$id = nrow(out)
 }
 
+saveRDS(out, "images/geocode_2.rds")
