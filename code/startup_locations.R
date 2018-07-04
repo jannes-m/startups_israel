@@ -40,6 +40,8 @@ su = st_read(conn, query = "select * from israel.startups")
 isr = st_read(conn, query = "select * from israel.israel")
 dbDisconnect(conn)
 
+cs = st_read("data/census_shp_2012/israel_demog2012.shp")
+
 #**********************************************************
 # 2 DATA PREPARATION---------------------------------------
 #**********************************************************
@@ -99,10 +101,10 @@ p_1 = spplot(s, col.regions = pal, between = list(x = 0.5),
        sp.layout = list(
          list("sp.polygons", as(isr, "Spatial"), col = "lightgrey",
               first = FALSE))) 
-png(filename = "figures/comp.png", width = 17, height = 17, units = "cm",
-    res = 300)
+# png(filename = "figures/comp.png", width = 17, height = 17, units = "cm",
+#     res = 300)
 print(p_1)
-dev.off()
+# dev.off()
 
 # does not make really sense
 # r_1 = rasterToPolygons(r_1)
@@ -119,6 +121,177 @@ dev.off()
 # library("RColorBrewer")
 # stplot(r_all[, , "layer"], yrs)
 
+#**********************************************************
+# SU CAPITALS----------------------------------------------
+#**********************************************************
+
+# polygonize startup capitals
+s_2 = sum(s)
+plot(s_2)
+plot(s_2 > 500)
+plot(s_2 > 200)
+plot(s_2 > 100)
+plot(s_2 > 75)
+plot(s_2 > 60)
+s_2[s_2 > 60]
+
+polys = s_2 > 60
+polys = polys %>% 
+  clump %>%
+  rasterToPolygons %>%
+  st_as_sf
+plot(isr$geometry, col = NA)
+plot(polys, add = TRUE)
+
+cap = polys %>%
+  group_by(clumps) %>%
+  summarize
+# Tel Aviv
+filter(cap, clumps == 3) %>% dplyr::select(geometry) %>% plot
+cs = st_transform(cs, crs = st_crs(cap))
+
+tv = filter(cap, clumps == 3)
+plot(tv$geometry)
+plot(cs$geometry, add = TRUE)
+plot(su$geometry, col = "red", pch = 16, add = TRUE)
+
+# 2.2 Tel Aviv animation example===========================
+#**********************************************************
+# just have a look at TV
+plot(s_2)
+# aggregate to a coarser resolution
+s_3 = aggregate(s_2, fact = 1.5, fun = sum)
+cellStats(s_3, max)
+# just use
+tv = s_3 == cellStats(s_3, max)
+tv[tv == 0] = NA
+tv = trim(tv)
+plot(tv)
+plot(cs$geometry, add = TRUE)
+plot(raster::extend(tv, 1))
+plot(cs$geometry, add = TRUE)
+tv = rasterToPolygons(clump(tv)) %>% st_as_sf
+plot(tv$geometry)
+plot(cs$geometry, add = TRUE)
+# ok, move 5km to the west
+tv = tv$geometry + c(-5000, 0)
+plot(tv, add = TRUE, border = "blue")
+tv = st_set_crs(tv, st_crs(cs))
+cs_tv = cs[tv, op = st_within]
+plot(cs_tv$geometry)
+plot(tv, add = TRUE, border = "blue")
+# add su information per year
+cs_tv$id = 1:nrow(cs_tv)
+# count points per polygon
+pp = st_join(dplyr::select(cs_tv, id), dplyr::select(su, founded))
+# just consider startups founded after 1969
+pp = filter(pp, is.na(founded) | founded >= 1970)
+filter(pp, is.na(founded))[1, ] %>% st_geometry %>% plot
+plot(su$geometry, add = TRUE, col = "red", pch = 16)  
+# ok, there are polygons without any startups
+pp = mutate(pp, n = ifelse(is.na(founded), 0, 1))
+# prior to aggregation, refactor
+labs = seq(1980, 2020, by = 10)
+pp$phase = cut(pp$founded, breaks = c(1900, labs - 1), 
+               labels = paste0(labs - 10, "-", labs - 1),
+               include.lowest = FALSE)
+# think about if this is what you want!
+filter(pp, founded == 1989)
+filter(pp, founded == 1990)
+filter(pp, founded == 1991)
+# aggregate
+pp_agg = group_by(pp, id, phase) %>%
+  summarize(n = sum(n, na.rm = TRUE))
+# check
+filter(pp_agg, is.na(phase))  # cs without any startups, all 0, excellent
+
+# now repeat the geometry for each year
+sort(unique(pp_agg$phase))
+
+# ok, NA phase is not very meaningful, so just assign NA phase to the first phase
+# and then all phases will be repeated whereby each of the tracts will receive 0
+# startups for each phase
+filter(pp_agg, is.na(phase))
+pp_agg = mutate(pp_agg, 
+                phase = as.character(phase),
+                phase = ifelse(is.na(phase), "1970-1979", phase))
+
+groups = ungroup(pp_agg) %>% 
+  dplyr::select(phase, id) %>% 
+  st_set_geometry(NULL) %>% 
+  filter(!duplicated(paste(phase, id)))
+groups = expand.grid(unique(groups$phase), unique(groups$id))
+names(groups) = c("phase", "id")
+# founded and id = unique?
+filter(pp_agg, duplicated(phase) & duplicated(id))  # yes, very good
+# full join (explode geometries)
+pp_agg_expl = full_join(pp_agg, groups, by = c("id", "phase"))
+length(unique(groups$phase))  # 49
+table(pp_agg_expl$id)  # all 49, perfect
+length(unique(groups$id))  # 528
+table(pp_agg_expl$phase)  # all 528, perfect
+pp_agg_expl$empty = st_dimension(pp_agg_expl)
+pp_agg_expl = mutate(pp_agg_expl, empty= ifelse(is.na(empty), 0, 1))
+# repeat geometries for all empty geometries
+arrange(pp_agg_expl, id, desc(empty))  
+plot(pp_agg_expl$geometry, col = NA)
+
+# the following code does not work, because sometimes we have more than 1 geom 
+# per group
+# pp_agg_expl = group_by(pp_agg_expl, id) %>%
+#   arrange(id, desc(empty)) %>%
+#   mutate(geometry = geometry[1])
+
+geom = group_by(pp_agg_expl, id) %>% 
+  filter(empty == 1) %>%
+  # sometimes we already have more than one geometry per group,
+  # just keep the first
+  slice(1)
+# repeat each geometry five times
+geom = rep(st_geometry(geom), each = 5)
+pp_agg_expl = arrange(pp_agg_expl, id)
+pp_agg_expl$geometry = geom
+plot(pp_agg_expl[, "n"])
+# you have to cast, otherwise tmap will complain
+pp_agg_expl = st_cast(pp_agg_expl, "MULTIPOLYGON")  
+# multi-panel plot
+# find out how to put legend into several columns 
+tm_shape(pp_agg_expl) + 
+  tm_fill("n", style = "fisher", n = 9) +
+  tm_facets(by = "phase") + 
+  tm_legend(legend.outside.position = "bottom")
+# not really convincing
+# have a look at the outlier
+ol = filter(pp_agg_expl, n > 500)
+units::set_units(st_area(ol), "km^2")
+mapview::mapview(ol)
+plot(ol$geometry)
+plot(su$geometry, add = TRUE) 
+# apparently, the same coordinate is plotted over and over again
+su[ol, ]  # -> Tel Aviv-Yafo
+
+# Animation
+# find out how to use three or more legend columns
+my_ani = tm_shape(pp_agg_expl) +
+  tm_fill("n", title = "Number of startups", style = "fisher", 
+          n = 9) +
+  tm_facets(along = "phase") + 
+  tm_legend(# legend.outside = TRUE, 
+            # legend.outside.position = "bottom",
+            legend.stack = "horizontal",
+            legend.title.size = 0.5,
+            legend.text.size = 0.4
+            #legend.format = list(digits = 0)
+            )
+# system("magick")  # does work
+# system("magick convert -version")
+tmap_animation(my_ani, 
+               filename = file.path(tempdir(), "test.gif"),
+               width = 1000, height = 900, delay = 150)
+
+#**********************************************************
+# IDEAS----------------------------------------------------
+#**********************************************************
 
 # Tel Aviv hineinzoomen + Animation Plot der Investoren, multi-nationale U
 # (mnc), accelerator, start-ups bis 11.07.2018 ideas: 1. variogram start-ups for
