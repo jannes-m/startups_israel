@@ -82,6 +82,23 @@ pa = getData("GADM", country = "PSE", level = 0, path = "data") %>%
 isr = st_union(isr, pa)
 plot(st_geometry(isr), col = NA, border = "red")
 
+# 2.3 ACC/INV/MNC==========================================
+#**********************************************************
+
+# accelerators/investors/multi-national companies (?) = sponsors
+spon = readxl::read_excel("data/raw_geocode_acc_inv_mnc.xlsx")
+colSums(is.na(spon))
+spon = filter(d, !(is.na(lon) | is.na(lat)))
+dim(spon)  # 624
+spon = st_as_sf(spon, coords = c("lon", "lat"))
+spon = st_set_crs(spon, 4326)
+spon = st_transform(spon, 2039)
+plot(spon$geometry)  # ok, there is one wrong coordinate
+plot(isr$geometry, col = NA)
+plot(spon$geometry, add = TRUE)
+plot(spon[st_union(isr), ]$geometry, col = "blue", pch = 16, add = TRUE)
+spon = spon[st_buffer(st_union(isr), 5000), ]
+dim(spon)  # 623
 
 #**********************************************************
 # 3 DB STUFF-----------------------------------------------
@@ -127,3 +144,7 @@ dbSendQuery(conn, "ALTER TABLE israel.startups ADD PRIMARY KEY (id);")
 st_write(isr, conn, c("israel", "israel"))
 dbSendQuery(conn, "ALTER TABLE israel.israel ADD PRIMARY KEY (OBJECTID);")
 # does not work, seems to be an encoding problem...
+
+# add sponsors
+st_write(spon, conn, c("israel", "sponsors"))
+dbSendQuery(conn, "ALTER TABLE israel.sponsors ADD PRIMARY KEY (id);")

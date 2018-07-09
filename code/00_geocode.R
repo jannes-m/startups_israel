@@ -99,12 +99,13 @@ d = rbind(acc, inv, mnc)
 sum(is.na(d$address))  # 177 without address
 group_by(d, type) %>%
   summarize(missing_address = sum(is.na(address)))
+d$id = 1:nrow(d)
 
 out = readRDS("images/geocode_2.rds")
 start = nrow(out) + 1
 end = nrow(d)
 out_2 = list()
-d$id = 1:nrow(d)
+
 for (i in start:end) {
   print(d$id[i])
   print(d$address[i])
@@ -128,4 +129,23 @@ for (i in start:end) {
   out$id = nrow(out)
 }
 
+# how many NAs, do we have here
+nrow(out[is.na(lon)])
+# goodness of the geocoding (approximate -> e.g., Tel Aviv-Yafo; Israel)
+# rooftop: perfect fit
+table(out$loctype)
+
+# just check randomly, if everything is in order
+i = sample(1:nrow(out), 1)
+out[i, "address"]
+d[i, "address"] %>% as.data.frame
+# ok, fine
+# save raw geocoding result
 saveRDS(out, "images/geocode_2.rds")
+# merge and select only needed columns
+out = readRDS("images/geocode_2.rds")
+out = dplyr::select(out, id, lon, lat, street_type = type, loctype, route, 
+                    street_number, locality, country)
+res = inner_join(d, out, by = "id")
+
+write.xlsx2(res, "data/raw_geocode_acc_inv_mnc.xlsx")

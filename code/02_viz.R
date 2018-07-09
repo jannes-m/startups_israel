@@ -1,6 +1,6 @@
-# Filename: startup_locations.R (2018-06-16)
+# Filename: 02_viz.R (2018-06-16)
 #
-# TO DO: Visualize temporal development of Israelian start-ups
+# TO DO: Visualize temporal development of Israelian start-ups and sponsors
 #
 # Author(s): Jannes Muenchow
 #
@@ -38,6 +38,8 @@ RPostgreSQL::dbListTables(conn)
 su = st_read(conn, query = "select * from israel.startups")
 # Israel/Palestine admin polygons
 isr = st_read(conn, query = "select * from israel.israel")
+# sponsors (acc/inv/mcn)
+spon = st_read(conn, query = "select * from israel.sponsors")
 dbDisconnect(conn)
 
 cs = st_read("data/census_shp_2012/israel_demog2012.shp")
@@ -68,7 +70,43 @@ r_3 = rasterize(filter(su, phase == 2018), r, field = "id", fun = "count")
 s = trim(stack(list(r_1, r_2, r_3)))
 
 #**********************************************************
-# 3 VISUALIZATION------------------------------------------
+# VARIOGRAM------------------------------------------------
+#**********************************************************
+
+library("gstat")
+r = raster(xmn = floor(b_box$xmin), xmx = ceiling(b_box$xmax),
+           ymn = floor(b_box$ymin), ymx = ceiling(b_box$ymax), res = 100,
+           crs = st_crs(su)$proj4string)
+r_1 = rasterize(filter(su, phase == 1989), r, field = "id", fun = "count")
+p_1 = rasterToPoints(r_1) %>%
+  as.data.frame
+coordinates(p_1) =~ x + y
+plot(variogram(layer ~ 1, data = p_1, width = 300, cutoff = 3000))
+
+r_2 = rasterize(filter(su, phase == 2007), r, field = "id", fun = "count")
+p_2 = rasterToPoints(r_2) %>%
+  as.data.frame
+coordinates(p_2) =~ x + y
+plot(variogram(layer ~ 1, data = p_2, width = 300, cutoff = 3000))
+
+r_3 = rasterize(filter(su, phase == 2018), r, field = "id", fun = "count")
+p_3 = rasterToPoints(r_3) %>%
+  as.data.frame
+coordinates(p_3) =~ x + y
+plot(variogram(layer ~ 1, data = p_3, width = 300, cutoff = 3000))
+
+
+# # overall
+# r_4 = rasterize(su, r, field = "id", fun = "count")
+# p_4 = rasterToPoints(r_4) %>%
+#   as.data.frame
+# coordinates(p_4) =~ x + y
+# plot(variogram(layer ~ 1, data = p_4, width = 300, cutoff = 3000))
+
+
+
+#**********************************************************
+# 3 SU VISUALIZATION---------------------------------------
 #**********************************************************
 
 # define fisher-jenking class intervals
@@ -290,11 +328,20 @@ tmap_animation(my_ani,
                width = 1000, height = 900, delay = 150)
 
 #**********************************************************
+# ACC, INV, MNC--------------------------------------------
+#**********************************************************
+
+d = read.xlsx2("data/raw_geocode_acc_inv_mnc.xlsx")
+
+#**********************************************************
 # IDEAS----------------------------------------------------
 #**********************************************************
 
 # Tel Aviv hineinzoomen + Animation Plot der Investoren, multi-nationale U
-# (mnc), accelerator, start-ups bis 11.07.2018 ideas: 1. variogram start-ups for
-# different phases -> does autocorrelation change? + interpolation? 2. use
-# distance to mnc, accelerator, investors as predictors for spatially predicting
-# start-ups
+# (mnc), accelerator, start-ups bis 11.07.2018 
+
+# ideas: 
+# 1. variogram start-ups for different phases -> does autocorrelation change? +
+# interpolation?
+# 2. use distance to mnc, accelerator, investors as predictors for spatially
+# predicting start-ups
