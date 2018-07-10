@@ -10,7 +10,9 @@
 #
 # 1. ATTACH PACKAGES AND DATA
 # 2. DATA PREPARATION
-# 3. VISUALIZATION
+# 3. VARIOGRAM
+# 4. SU VISUALIZATION
+# 5. SU "CAPITAL" ANIMATION
 #
 #**********************************************************
 # 1 ATTACH PACKAGES AND DATA-------------------------------
@@ -36,13 +38,13 @@ conn = dbConnect(drv = PostgreSQL(),
 RPostgreSQL::dbListTables(conn)
 # startup locations
 su = st_read(conn, query = "select * from israel.startups")
-# Israel/Palestine admin polygons
-isr = st_read(conn, query = "select * from israel.israel")
 # sponsors (acc/inv/mcn)
 spon = st_read(conn, query = "select * from israel.sponsors")
+# Israel/Palestine admin polygons
+isr = st_read(conn, query = "select * from israel.israel")
+# census tracts
+cs = st_read(conn, query = "select * from israel.census")
 dbDisconnect(conn)
-
-cs = st_read("data/census_shp_2012/israel_demog2012.shp")
 
 #**********************************************************
 # 2 DATA PREPARATION---------------------------------------
@@ -70,7 +72,7 @@ r_3 = rasterize(filter(su, phase == 2018), r, field = "id", fun = "count")
 s = trim(stack(list(r_1, r_2, r_3)))
 
 #**********************************************************
-# VARIOGRAM------------------------------------------------
+# 3 VARIOGRAM----------------------------------------------
 #**********************************************************
 
 library("gstat")
@@ -81,32 +83,33 @@ r_1 = rasterize(filter(su, phase == 1989), r, field = "id", fun = "count")
 p_1 = rasterToPoints(r_1) %>%
   as.data.frame
 coordinates(p_1) =~ x + y
-plot(variogram(layer ~ 1, data = p_1, width = 300, cutoff = 3000))
+vg_1 = variogram(layer ~ 1, data = p_1, width = 300, cutoff = 2500)
+plot(vg_1, plot.numbers = TRUE)
 
 r_2 = rasterize(filter(su, phase == 2007), r, field = "id", fun = "count")
 p_2 = rasterToPoints(r_2) %>%
   as.data.frame
 coordinates(p_2) =~ x + y
-plot(variogram(layer ~ 1, data = p_2, width = 300, cutoff = 3000))
+vg_2 = variogram(layer ~ 1, data = p_2, width = 300, cutoff = 2500)
+plot(vg_2, plot.numbers = TRUE)
 
 r_3 = rasterize(filter(su, phase == 2018), r, field = "id", fun = "count")
 p_3 = rasterToPoints(r_3) %>%
   as.data.frame
 coordinates(p_3) =~ x + y
-plot(variogram(layer ~ 1, data = p_3, width = 300, cutoff = 3000))
+vg_3 = variogram(layer ~ 1, data = p_3, width = 300, cutoff = 2500)
+plot(vg_3, plot.numbers = TRUE)
 
-
-# # overall
-# r_4 = rasterize(su, r, field = "id", fun = "count")
-# p_4 = rasterToPoints(r_4) %>%
-#   as.data.frame
-# coordinates(p_4) =~ x + y
-# plot(variogram(layer ~ 1, data = p_4, width = 300, cutoff = 3000))
-
+vg_1$phase = 1
+vg_2$phase = 2
+vg_3$phase = 3
+vg = rbind(vg_1, vg_2, vg_3)
+xyplot(gamma ~ dist | phase, data = vg, as.table = TRUE,
+       scales = list(y = "free"), layout = c(1, 3))
 
 
 #**********************************************************
-# 3 SU VISUALIZATION---------------------------------------
+# 4 SU VISUALIZATION---------------------------------------
 #**********************************************************
 
 # define fisher-jenking class intervals
@@ -160,7 +163,7 @@ print(p_1)
 # stplot(r_all[, , "layer"], yrs)
 
 #**********************************************************
-# SU CAPITALS----------------------------------------------
+# 5 SU CAPITAL ANIMATION-----------------------------------
 #**********************************************************
 
 # polygonize startup capitals
@@ -331,7 +334,61 @@ tmap_animation(my_ani,
 # ACC, INV, MNC--------------------------------------------
 #**********************************************************
 
-d = read.xlsx2("data/raw_geocode_acc_inv_mnc.xlsx")
+table(spon$type)
+plot(isr$geometry, col = NA)
+plot(spon$geometry, add = TRUE, pch = 16, col = as.factor(spon$type), cex = 0.4)
+legend("right", legend = levels(as.factor(spon$type)), pch = 16,
+       col = 1:3)
+spon$type = as.factor(spon$type)
+l_1 = list("sp.polygons", as(isr, "Spatial"))
+spplot(as(spon, "Spatial"), "type",
+       sp.layout = l_1)
+
+coords = st_coordinates(spon) %>%
+  as.data.frame
+poly = rasterToPolygons(sum(s))
+q_7 = classInt::classIntervals(poly$layer, style = "fisher", n = 7)
+pal = RColorBrewer::brewer.pal(7, "YlOrRd")
+poly$col = classInt::findColours(q_7, pal)
+
+xyplot(Y ~ X | spon$type, data = coords, aspect = "iso",
+       xlab = "", ylab = "",
+       scales = list(
+         alternating = c(1, 0),
+         tck = c(1, 0)
+       ),
+       panel = function(...) {
+         sp.polygons(as(isr, "Spatial"), col = gray(0.5))
+         sp.polygons(poly, fill = poly$col, col = "lightgray")
+         panel.points(..., pch = 16, cex = 0.5, col = "black")
+        })
+# also possible to additionally group panels by founding phase/year
+
+# Indicator variogram
+su_2 = dplyr::select(su, founded)
+su_2$type = as.factor("su")
+spon_2 = dplyr::select(spon, founded)
+# also possible:
+# spon_2 = dplyr::select(spon, founded, type)
+spon_2$type = as.factor("spon")
+indi = rbind(su_2, spon_2)
+indi = as(indi, "Spatial")
+vi = variogram(type ~ 1, location = indi, cutoff = 2000, width = 100)
+plot(vi, plot.numbers = TRUE)
+plot(vi)
+# this means there is a spatial clustering of sus without sponsors (well, not
+# really surprising since there are so many more sus than sponsores)
+# but keep in mind that we are here looking at the aggregate:
+# - founded years
+# - sponsors can also be subdivided into acc, inv, mnc
+
+# but it might also be that the 66073 observations are stemming mainly from
+# one or two places...
+plot(ol$geometry)
+plot(su$geometry, add = TRUE) 
+plot(spon$geometry, add = TRUE, col = "blue", pch = 16)
+# ok, here are at least two sponsors
+spon[ol, "type"]  # in fact, a few sponsors are sharing the same coordinate
 
 #**********************************************************
 # IDEAS----------------------------------------------------
@@ -343,5 +400,7 @@ d = read.xlsx2("data/raw_geocode_acc_inv_mnc.xlsx")
 # ideas: 
 # 1. variogram start-ups for different phases -> does autocorrelation change? +
 # interpolation?
-# 2. use distance to mnc, accelerator, investors as predictors for spatially
+# 2. Indicator variogram of sus and sponsors
+# 3. use distance to mnc, accelerator, investors as predictors for spatially
 # predicting start-ups
+# 4. or compute distance to closest mnc, acc, inv and use dist as variogram variable
