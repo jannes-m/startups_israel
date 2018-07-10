@@ -82,6 +82,9 @@ pa = getData("GADM", country = "PSE", level = 0, path = "data") %>%
 isr = st_union(isr, pa)
 plot(st_geometry(isr), col = NA, border = "red")
 
+# census tracts
+cs = st_read("data/census_shp_2012/israel_demog2012.shp")
+
 # 2.3 ACC/INV/MNC==========================================
 #**********************************************************
 
@@ -140,11 +143,14 @@ st_write(su, conn, c("israel", "startups"))
 # specify a primary key column
 dbSendQuery(conn, "ALTER TABLE israel.startups ADD PRIMARY KEY (id);")
 
+# add sponsors
+st_write(spon, conn, c("israel", "sponsors"))
+dbSendQuery(conn, "ALTER TABLE israel.sponsors ADD PRIMARY KEY (id);")
+
 # add Israel/Palestina to the db
 st_write(isr, conn, c("israel", "israel"))
 dbSendQuery(conn, "ALTER TABLE israel.israel ADD PRIMARY KEY (OBJECTID);")
 # does not work, seems to be an encoding problem...
 
-# add sponsors
-st_write(spon, conn, c("israel", "sponsors"))
-dbSendQuery(conn, "ALTER TABLE israel.sponsors ADD PRIMARY KEY (id);")
+# add census tracts
+st_write(cs, conn, c("israel", "census"))
