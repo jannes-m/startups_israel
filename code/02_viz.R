@@ -28,6 +28,7 @@ library("sf")
 library("lattice")
 library("latticeExtra")
 library("RPostgreSQL")
+library("gstat")
 
 # attach data
 conn = dbConnect(drv = PostgreSQL(), 
@@ -44,12 +45,12 @@ spon = st_read(conn, query = "select * from israel.sponsors")
 isr = st_read(conn, query = "select * from israel.israel")
 # census tracts
 cs = st_read(conn, query = "select * from israel.census")
+# OSM admin areas
+admin = st_read(conn, query = "select * from israel.admin")
 dbDisconnect(conn)
 
-#**********************************************************
-# 2 DATA PREPARATION---------------------------------------
-#**********************************************************
 
+# little preparation
 # tree start-up phases
 # 1: -1989; 2: 1990-2007; 3: 2008-2018
 su$phase = cut(su$founded, breaks = c(0, 1989, 2007, 2018), 
@@ -57,25 +58,11 @@ su$phase = cut(su$founded, breaks = c(0, 1989, 2007, 2018),
 # check
 filter(su, founded == 1989) %>% dplyr::select(founded, phase)  # looks good
 
-# aggregate points into a raster of resolution 10 km
+#**********************************************************
+# 2 VARIOGRAM----------------------------------------------
+#**********************************************************
+
 b_box = st_bbox(su)
-r = raster(xmn = floor(b_box$xmin), xmx = ceiling(b_box$xmax),
-           ymn = floor(b_box$ymin), ymx = ceiling(b_box$ymax), res = 10000,
-           crs = st_crs(su)$proj4string)
-r_1 = rasterize(filter(su, phase == 1989), r, field = "id", fun = "count")
-# r_1[is.na(r_1)] = 0
-r_2 = rasterize(filter(su, phase == 2007), r, field = "id", fun = "count")
-# r_2[is.na(r_2)] = 0
-r_3 = rasterize(filter(su, phase == 2018), r, field = "id", fun = "count")
-# r_3[is.na(r_3)] = 0
-# put everything into a raster stack and trim outer NAs
-s = trim(stack(list(r_1, r_2, r_3)))
-
-#**********************************************************
-# 3 VARIOGRAM----------------------------------------------
-#**********************************************************
-
-library("gstat")
 r = raster(xmn = floor(b_box$xmin), xmx = ceiling(b_box$xmax),
            ymn = floor(b_box$ymin), ymx = ceiling(b_box$ymax), res = 100,
            crs = st_crs(su)$proj4string)
@@ -105,15 +92,33 @@ vg_2$phase = 2
 vg_3$phase = 3
 vg = rbind(vg_1, vg_2, vg_3)
 xyplot(gamma ~ dist | phase, data = vg, as.table = TRUE,
-       scales = list(y = "free"), layout = c(1, 3))
+       scales = list(y = "free"), layout = c(3, 1))
 
 
 #**********************************************************
-# 4 SU VISUALIZATION---------------------------------------
+# 3 SU VISUALIZATION---------------------------------------
 #**********************************************************
 
+
+# aggregate points into a raster of resolution 10 km
+b_box = st_bbox(su)
+r = raster(xmn = floor(b_box$xmin), xmx = ceiling(b_box$xmax),
+           ymn = floor(b_box$ymin), ymx = ceiling(b_box$ymax), res = 10000,
+           crs = st_crs(su)$proj4string)
+su_1 = rasterize(filter(su, phase == 1989), r, field = "id", fun = "count")
+# r_1[is.na(r_1)] = 0
+su_2 = rasterize(filter(su, phase == 2007), r, field = "id", fun = "count")
+# r_2[is.na(r_2)] = 0
+su_3 = rasterize(filter(su, phase == 2018), r, field = "id", fun = "count")
+# r_3[is.na(r_3)] = 0
+# put everything into a raster stack and trim outer NAs
+s = trim(stack(list(su_1, su_2, su_3)))
 # define fisher-jenking class intervals
-c_7 = classInt::classIntervals(values(r_3), n = 7, style = "fisher")
+# percentage values
+s = s / sum(cellStats(s, "sum"))
+# c_7 = classInt::classIntervals(values(r_3), n = 7, style = "fisher")
+# percentag classification
+c_7 = classInt::classIntervals(values(s), n = 7, style = "fisher")
 cuts = c_7$brks
 pal = RColorBrewer::brewer.pal(7, "YlOrRd")
 #plot(trim(r_1), col = RColorBrewer::brewer.pal(n = 9, name = "YlOrRd"))
@@ -122,30 +127,39 @@ pal = RColorBrewer::brewer.pal(7, "YlOrRd")
 # names(s) = c(expression("1901-1997"), "1998-2010", "2011-2018")
 # does not works as wanted -> transformed to X1901..1997
 p_1 = spplot(s, col.regions = pal, between = list(x = 0.5),
-       colorkey = list(space = "right",
-                       # labels specifies what to plot
-                       # at specifies where to plot the labels
-                       labels = list(labels = c(0, cuts[-1]),
-                                     at = cuts, cex = 0.7),
-                       # at is needed again, to indicate where the 
-                       # colors change (must be of length 1 more than 
-                       # the col vector!!!)
-                       at = cuts,
-                       # width and heigt are relative to the plot
-                       width = 1, height = 1,
-                       # draw a box and ticks around the legend
-                       axis.line = list(col = "black")),
+             colorkey = list(space = "right",
+                             # labels specifies what to plot
+                             # at specifies where to plot the labels
+                             # labels = list(labels = c("", round(cuts[-1])),
+                             #               at = cuts, cex = 0.7),
+                             # percentage display
+                             labels = list(labels =
+                                             c("", round(cuts[2] * 100, 1),
+                                               round(cuts[-c(1:2)] * 100)),
+                                           at = cuts, cex = 0.7),
+                             # at is needed again, to indicate where the 
+                             # colors change (must be of length 1 more than 
+                             # the col vector!!!)
+                             at = cuts,
+                             # width and heigt are relative to the plot
+                             width = 1, height = 1,
+                             # draw a box and ticks around the legend
+                             axis.line = list(col = "black")),
        # at COMMAND AGAIN NECESSARY AS WE PLOT A CONTINOUS VARIABLE!!!
        at = cuts, pretty = TRUE,
+       # ylab.right = "%",
+       # par.settings = list(layout.widths = list(axis.key.padding = 0,
+       #                                          ylab.right = 2)),
        strip = strip.custom(factor.levels = 
-                              c("<=1989", "1990-2007", "2008-2018")),
+                              c("<=1989", "1990-2007", "2008-2018"),
+                            bg = "white"),
        sp.layout = list(
          list("sp.polygons", as(isr, "Spatial"), col = "lightgrey",
               first = FALSE))) 
-# png(filename = "figures/comp.png", width = 17, height = 17, units = "cm",
-#     res = 300)
+png(filename = "figures/su_per.png", width = 17, height = 17, units = "cm",
+    res = 300)
 print(p_1)
-# dev.off()
+dev.off()
 
 # does not make really sense
 # r_1 = rasterToPolygons(r_1)
@@ -163,10 +177,11 @@ print(p_1)
 # stplot(r_all[, , "layer"], yrs)
 
 #**********************************************************
-# 5 SU CAPITAL ANIMATION-----------------------------------
+# 4 SU CAPITAL ANIMATION-----------------------------------
 #**********************************************************
 
 # polygonize startup capitals
+s = trim(stack(list(su_1, su_2, su_3)))
 s_2 = sum(s)
 plot(s_2)
 plot(s_2 > 500)
@@ -196,7 +211,10 @@ plot(tv$geometry)
 plot(cs$geometry, add = TRUE)
 plot(su$geometry, col = "red", pch = 16, add = TRUE)
 
-# 2.2 Tel Aviv animation example===========================
+# 4.1 Tel Aviv animation example===========================
+#**********************************************************
+
+# 4.1.1 Census tracts######################################
 #**********************************************************
 # just have a look at TV
 plot(s_2)
@@ -330,8 +348,77 @@ tmap_animation(my_ani,
                filename = file.path(tempdir(), "test.gif"),
                width = 1000, height = 900, delay = 150)
 
+# 4.1.2 Raster cell animation##############################
 #**********************************************************
-# ACC, INV, MNC--------------------------------------------
+
+# Tel Aviv district
+tv = filter(admin, name.en %in% c("Tel Aviv-Yafo", "Tel Aviv District"))
+plot(tv$geometry)
+tv = st_transform(tv, st_crs(isr))
+plot(tv$geometry)
+plot(su$geometry, add = TRUE)
+
+# construct a bounding box
+mat = as.matrix(expand.grid(st_bbox(tv)[c(1, 3)], st_bbox(tv)[c(2, 4)]))
+mat = mat[c(1, 2, 4, 3, 1), ]
+bb = st_polygon(list(mat))
+plot(bb, axes = TRUE)
+tv_r = raster(as(bb, "Spatial"), res = 750)
+projection(tv_r) = st_crs(isr)$proj4string
+su$r = 1
+# count points per raster cell and phase
+labs = seq(1980, 2020, by = 10)
+su$phase = cut(su$founded, breaks = c(1900, labs - 1), 
+               labels = paste0(labs - 10, "-", labs - 1),
+               include.lowest = FALSE)
+# aggregate points by phase
+agg = lapply(levels(su$phase), function(x) {
+  tmp = filter(su, phase == x)
+  rasterize(x = tmp, y = tv_r, field = "r", fun = "count")
+}) %>%
+  stack
+
+qtm(agg)
+# corresponds to
+tm_shape(agg) + tm_raster()
+
+# convert from raster to polygons
+agg = rasterToPolygons(agg) %>%
+  st_as_sf
+# melt sf data.frame
+agg = reshape2::melt(agg, id.vars = "geometry") %>%
+  st_as_sf
+levels(agg$variable) = levels(su$phase)
+fig = tm_shape(agg) + 
+  tm_fill("value", style = "fisher", n = 9) +
+  tm_facets(by = "variable") + 
+  #tm_legend(legend.outside.position = "bottom") +
+  tm_shape(admin) +
+  tm_borders()
+tmap_save(fig, "figures/su_tv_mp.png")
+
+my_ani = tm_shape(agg) +
+  tm_fill("value", title = "Number of startups", style = "fisher", 
+          n = 9) +
+  tm_facets(along = "variable") + 
+  tm_legend(# legend.outside = TRUE, 
+    # legend.outside.position = "bottom",
+    legend.stack = "horizontal",
+    legend.title.size = 0.5,
+    legend.text.size = 0.4
+    #legend.format = list(digits = 0)
+  ) +
+  tm_shape(admin) +
+  tm_borders()
+
+# system("magick")  # does work
+# system("magick convert -version")
+tmap_animation(my_ani, 
+               filename = "figures/su_tv_anim.gif",
+               width = 1000, height = 900, delay = 150)
+
+#**********************************************************
+# 5 ACC, INV, MNC------------------------------------------
 #**********************************************************
 
 table(spon$type)
@@ -344,27 +431,153 @@ l_1 = list("sp.polygons", as(isr, "Spatial"))
 spplot(as(spon, "Spatial"), "type",
        sp.layout = l_1)
 
-coords = st_coordinates(spon) %>%
+spon[, c("x", "y")] = st_coordinates(spon) %>%
   as.data.frame
+spon$phase = cut(spon$founded, breaks = c(0, 1989, 2007, 2018), 
+                 labels = c("<=1989", "1990-2007", "2008-2018"))
+# filter(spon, founded == 1989)
+# filter(spon, founded == 1990)
+
+
+# 5.1 Sponsor by phase and type============================
+#**********************************************************
+# s = startup-stack over three phases
 poly = rasterToPolygons(sum(s))
 q_7 = classInt::classIntervals(poly$layer, style = "fisher", n = 7)
 pal = RColorBrewer::brewer.pal(7, "YlOrRd")
 poly$col = classInt::findColours(q_7, pal)
 
-xyplot(Y ~ X | spon$type, data = coords, aspect = "iso",
-       xlab = "", ylab = "",
+p_2 = xyplot(y ~ x | phase + type, data = spon, aspect = "iso",
+       xlab = "", ylab = "", ylim = c(560000, 780000), as.table = TRUE,
        scales = list(
-         alternating = c(1, 0),
-         tck = c(1, 0)
+         draw = FALSE
        ),
        panel = function(...) {
          sp.polygons(as(isr, "Spatial"), col = gray(0.5))
-         sp.polygons(poly, fill = poly$col, col = "lightgray")
+         # sp.polygons(poly, fill = poly$col, col = "lightgray")
          panel.points(..., pch = 16, cex = 0.5, col = "black")
         })
-# also possible to additionally group panels by founding phase/year
 
-# Indicator variogram
+
+p_3 = useOuterStrips(
+  p_2, 
+  strip = strip.custom(bg = c("white"),
+                       par.strip.text = list(cex = 0.8)),
+  strip.left = strip.custom(bg = "white", 
+                            par.strip.text = list(cex = 0.8))
+)
+
+
+# this is working
+p_3 + latticeExtra::layer(panel.points(x = 220000, y = 650000, 
+                                       col = "red", cex = 2))
+# percentage
+
+# create first a heatmap which should be laid under our sponsors
+c_7 = classInt::classIntervals(values(s), n = 7, style = "fisher")
+cuts = c_7$brks
+pal = RColorBrewer::brewer.pal(7, "YlOrRd")
+#plot(trim(r_1), col = RColorBrewer::brewer.pal(n = 9, name = "YlOrRd"))
+#dev.off()
+
+# names(s) = c(expression("1901-1997"), "1998-2010", "2011-2018")
+# does not works as wanted -> transformed to X1901..1997
+
+# repeat the startup stack three times in a list, which will produce 9 figures
+hm = spplot(stack(list(s, s, s)), col.regions = pal, between = list(x = 0.5),
+             colorkey = list(space = "right",
+                             # labels specifies what to plot
+                             # at specifies where to plot the labels
+                             labels = list(labels = c(0, cuts[-1]),
+                                           at = cuts, cex = 0.7),
+                             # at is needed again, to indicate where the 
+                             # colors change (must be of length 1 more than 
+                             # the col vector!!!)
+                             at = cuts,
+                             # width and heigt are relative to the plot
+                             width = 1, height = 1,
+                             # draw a box and ticks around the legend
+                             axis.line = list(col = "black")),
+             # at COMMAND AGAIN NECESSARY AS WE PLOT A CONTINOUS VARIABLE!!!
+             at = cuts, pretty = TRUE) 
+
+p_4 = p_3 + 
+  as.layer(hm, under = TRUE)
+png(filename = "figures/sponsors.png", res = 300, width = 17, height = 22,
+    units = "cm")
+print(p_4)
+dev.off()
+
+# 5.2 Sponsor heatmap by phase (%)=========================
+#**********************************************************
+# aggregate points into a raster of resolution 10 km
+b_box = st_bbox(spon)
+# use the exact same raster as for the startups
+r = su_1
+values(r) = NA
+spon_1 = rasterize(filter(spon, phase == "<=1989"), r, field = "id", fun = "count")
+# r_1[is.na(r_1)] = 0
+spon_2 = rasterize(filter(spon, phase == "1990-2007"), r, field = "id", fun = "count")
+# r_2[is.na(r_2)] = 0
+spon_3 = rasterize(filter(spon, phase == "2008-2018"), r, field = "id", fun = "count")
+# r_3[is.na(r_3)] = 0
+# put everything into a raster stack and trim outer NAs
+spon_s = trim(stack(list(spon_1, spon_2, spon_3)))
+# define fisher-jenking class intervals
+# percentage values
+spon_s = spon_s / sum(cellStats(spon_s, "sum"))
+# plot(trim(r_1), col = RColorBrewer::brewer.pal(n = 9, name = "YlOrRd"))
+# dev.off()
+
+c_7 = classInt::classIntervals(values(spon_s), n = 7, style = "fisher")
+cuts = c_7$brks
+pal = RColorBrewer::brewer.pal(7, "YlOrRd")
+
+# spplot(spon_s, col.regions = pal, at = cuts, between = list(x = 0.5))
+p_5 = spplot(spon_s, col.regions = pal, between = list(x = 0.5),
+             colorkey = list(space = "right",
+                             # labels specifies what to plot
+                             # at specifies where to plot the labels
+                             # labels = list(labels = c(0, cuts[-1]),
+                             #               at = cuts, cex = 0.7),
+                             
+                             # percentage display
+                             labels = list(labels = 
+                                             c("", round(cuts[2] * 100, 1),
+                                               round(cuts[-c(1:2)] * 100)),
+                                           at = cuts, cex = 0.7),
+                             # at is needed again, to indicate where the 
+                             # colors change (must be of length 1 more than 
+                             # the col vector!!!)
+                             at = cuts,
+                             # width and heigt are relative to the plot
+                             width = 1, height = 1,
+                             # draw a box and ticks around the legend
+                             axis.line = list(col = "black")),
+             # at COMMAND AGAIN NECESSARY AS WE PLOT A CONTINOUS VARIABLE!!!
+             at = cuts, pretty = TRUE,
+             ylab.right = "%",
+             par.settings = list(layout.widths = list(axis.key.padding = 0,
+                                                      ylab.right = 2)),
+             strip = strip.custom(factor.levels = 
+                                    c("<=1989", "1990-2007", "2008-2018"),
+                                  bg = c("white")),
+             sp.layout = list(
+               list("sp.polygons", as(isr, "Spatial"), col = "lightgrey",
+                    first = FALSE))
+              #, list("sp.points", as(spon, "Spatial")))
+             ) 
+png(filename = "figures/spon_per.png", width = 17, height = 17, units = "cm",
+    res = 300)
+print(p_5)
+dev.off()
+
+
+#**********************************************************
+# 6 INDICATOR VARIOGRAM------------------------------------
+#**********************************************************
+
+library("gstat")
 su_2 = dplyr::select(su, founded)
 su_2$type = as.factor("su")
 spon_2 = dplyr::select(spon, founded)
@@ -373,7 +586,7 @@ spon_2 = dplyr::select(spon, founded)
 spon_2$type = as.factor("spon")
 indi = rbind(su_2, spon_2)
 indi = as(indi, "Spatial")
-vi = variogram(type ~ 1, location = indi, cutoff = 2000, width = 100)
+vi = variogram(type ~ 1, location = indi, cutoff = 2000, width = 300)
 plot(vi, plot.numbers = TRUE)
 plot(vi)
 # this means there is a spatial clustering of sus without sponsors (well, not
