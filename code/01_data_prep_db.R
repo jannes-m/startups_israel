@@ -103,6 +103,52 @@ plot(spon[st_union(isr), ]$geometry, col = "blue", pch = 16, add = TRUE)
 spon = spon[st_buffer(st_union(isr), 5000), ]
 dim(spon)  # 623
 
+# 2.4 osmdata==============================================
+library("osmdata")
+library("sf")
+tv = osmdata::getbb("tel aviv", format_out = "sf_polygon")
+# just testing
+# tmp = available_features()
+# grep("district", tmp, value = TRUE)
+# grep("place", tmp, value = TRUE)
+# grep("highway", tmp, value = TRUE)
+# grep("motorway", tmp, value = TRUE)
+
+admin = tmp_2 = opq("tel aviv, israel") %>%
+  #   add_osm_feature(key = "place", value = "borough")
+  #   add_osm_feature(key = "place", value = "district")
+  # add_osm_feature(key = "place", value = "municipality")
+  #  add_osm_feature(key = "place", value = "county")
+  #add_osm_feature(key = "place", value = "city")
+  add_osm_feature(key = "boundary", value = "administrative")
+admin = osmdata_sf(admin)
+admin
+b_box = admin$bbox
+admin = admin$osm_multipolygons
+plot(tv$geometry)
+# plot(test$osm_polygons, add = TRUE, border = "blue")
+plot(admin$geometry, add = TRUE, border = "red")
+plot(tv$geometry, add = TRUE, border = "blue")
+
+# plotting Tel Aviv-Yafo and Tel Aviv District
+plot(admin[c(6, 15), ]$geometry)
+admin = st_transform(admin, st_crs(isr))
+
+ovq = opq(as.numeric(unlist(strsplit(b_box, ",")))[c(3, 2, 4, 1)])
+q_1 = ovq %>%
+  add_osm_feature(key = "highway", value = "motorway")
+q_2 =  ovq %>%
+  add_osm_feature(key = "highway", value = "trunk")
+q_3 =  ovq %>%
+  add_osm_feature(key = "highway", value = "primary")
+q_4 =  ovq %>%
+  add_osm_feature(key = "highway", value = "secondary")
+hways = c(osmdata_sf(q_1), osmdata_sf(q_2), osmdata_sf(q_3), osmdata_sf(q_4))
+plot(hways$osm_lines$geometry, add = TRUE, col = "blue")
+
+hways = hways$osm_lines %>%
+  st_transform(st_crs(isr))
+
 #**********************************************************
 # 3 DB STUFF-----------------------------------------------
 #**********************************************************
@@ -154,3 +200,8 @@ dbSendQuery(conn, "ALTER TABLE israel.israel ADD PRIMARY KEY (OBJECTID);")
 
 # add census tracts
 st_write(cs, conn, c("israel", "census"))
+
+# add OSM data
+st_write(admin, conn, c("israel", "admin"))
+st_write(hways, conn, c("israel", "hways"))
+dbDisconnect(conn)
