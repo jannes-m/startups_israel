@@ -32,7 +32,7 @@ library("gstat")
 
 # attach data
 conn = dbConnect(drv = PostgreSQL(), 
-                 user = "jannes",
+                 user = "postgres",
                  dbname = "qual_gis", 
                  port = 5432,
                  password = "jannes")
@@ -131,14 +131,14 @@ p_1 = spplot(s, col.regions = pal, between = list(x = 0.5),
                              # labels specifies what to plot
                              # at specifies where to plot the labels
                              # labels = list(labels = c("", round(cuts[-1])),
-                             #               at = cuts, cex = 0.7),
+                             #              at = cuts, cex = 0.7),
                              # percentage display
                              labels = list(labels =
                                              c("", round(cuts[2] * 100, 1),
                                                round(cuts[-c(1:2)] * 100)),
                                            at = cuts, cex = 0.7),
-                             # at is needed again, to indicate where the 
-                             # colors change (must be of length 1 more than 
+                             # at is needed again, to indicate where the
+                             # colors change (must be of length 1 more than
                              # the col vector!!!)
                              at = cuts,
                              # width and heigt are relative to the plot
@@ -160,6 +160,66 @@ png(filename = "figures/su_per.png", width = 17, height = 17, units = "cm",
     res = 300)
 print(p_1)
 dev.off()
+
+# now in absolute numbers
+s = trim(stack(list(su_1, su_2, su_3)))
+c_7 = classInt::classIntervals(values(s), n = 7, style = "fisher")
+cuts = c_7$brks
+pal = RColorBrewer::brewer.pal(7, "YlOrRd")
+nms = c("Pre-emergence", 
+        "Emergence",
+        "Growth")
+coords = tibble::tribble(~x, ~y, ~name,
+                         34.782777, 32.077890, "Tel Aviv",
+                         34.990511, 32.800339, "Haifa",
+                         35.212674, 31.766307, "Jerusalem"
+)
+s_2 = projectRaster(s, crs = st_crs(4326)$proj4string)
+coords = st_as_sf(coords, coords = c("x", "y"), crs = 4326) %>%
+  st_transform(crs = st_crs(s2))
+
+
+p_2 = spplot(s_2, col.regions = pal, between = list(x = 0.5),
+       colorkey = list(space = "right",
+                       # labels specifies what to plot
+                       # at specifies where to plot the labels
+                       #labels = list(labels = c("", round(cuts[-1])),
+                       #             at = cuts, cex = 0.7),
+                       # percentage display
+                       labels = list(labels =
+                                       c("", round(cuts[2]),
+                                         round(cuts[-c(1:2)])),
+                                     at = cuts, cex = 0.7),
+                       # at is needed again, to indicate where the 
+                       # colors change (must be of length 1 more than 
+                       # the col vector!!!)
+                       at = cuts,
+                       # width and heigt are relative to the plot
+                       width = 1, height = 1,
+                       # draw a box and ticks around the legend
+                       axis.line = list(col = "black")),
+       # at COMMAND AGAIN NECESSARY AS WE PLOT A CONTINOUS VARIABLE!!!
+       at = cuts, pretty = TRUE,
+       scales = list(draw = TRUE, alternating = 1, tck = c(1, 0)),
+       # ylab.right = "%",
+       # par.settings = list(layout.widths = list(axis.key.padding = 0,
+       #                                          ylab.right = 2)),
+       strip = strip.custom(factor.levels = nms,
+                            bg = "white"),
+       sp.layout = list(
+         list("sp.polygons", as(st_transform(isr, 4326), "Spatial"), 
+              col = "lightgrey", first = FALSE),
+         list("sp.points", as(st_geometry(coords), "Spatial"), col = "black",
+              cex = 1, pch = 16, first = FALSE),
+         list("sp.text", st_coordinates(coords), txt = coords$name, 
+              cex = 1, font = 3,  pos = 1, first = FALSE)
+       )) 
+
+png(filename = "figures/su_abs.png", width = 17, height = 17, units = "cm",
+    res = 300)
+print(p_2)
+dev.off()
+
 
 # does not make really sense
 # r_1 = rasterToPolygons(r_1)

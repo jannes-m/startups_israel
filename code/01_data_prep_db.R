@@ -27,11 +27,29 @@ library("raster")
 # 2 DATA PREPARATION---------------------------------------
 #**********************************************************
 
-# 2.1 startups=============================================
+# 2.1 Israel/Palestine polygons============================
+#**********************************************************
+# israel polygons
+isr = getData("GADM", country = "ISR", level = 1, path = "data") %>%
+  st_as_sf %>%
+  st_transform(2039)
+ccodes()[grep("Palest", ccodes()$NAME), ]
+pa = getData("GADM", country = "PSE", level = 0, path = "data") %>%
+  st_as_sf %>%
+  st_transform(2039)
+# join the two countries 
+isr = st_union(isr, pa)
+plot(st_geometry(isr), col = NA, border = "red")
+
+# census tracts
+cs = st_read("data/census_shp_2012/israel_demog2012.shp")
+
+# 2.2 startups=============================================
 #**********************************************************
 
 # read in start-ups (su)
 su = read_excel("data/20180328 Datensatz Masterarbeit_cleaned_geocode.xlsx")
+nrow(su)  # 7073
 colSums(is.na(su))
 filter(su, is.na(founded)) %>%
   dplyr::select(founded, created_date, update_date)
@@ -47,6 +65,7 @@ dplyr::filter(su, is.na(lat) | is.na(lon)) %>%
 su = filter(su, !(is.na(lat) | is.na(lon)))
 # ok, there are some wrong coordinates
 summary(su[, c("lat", "lon")])
+dim(su)  # 6665
 # convert to sf
 su = st_as_sf(su, coords = c("lon", "lat")) %>%
   st_set_crs(4326) %>%
@@ -68,30 +87,15 @@ plot(buf, add = TRUE)
 su = su[buf, ]
 dim(su)  # 6658, ok, perfect
 
-# 2.2 Israel/Palestine polygons============================
-#**********************************************************
-# israel polygons
-isr = getData("GADM", country = "ISR", level = 1, path = "data") %>%
-  st_as_sf %>%
-  st_transform(2039)
-ccodes()[grep("Palest", ccodes()$NAME), ]
-pa = getData("GADM", country = "PSE", level = 0, path = "data") %>%
-  st_as_sf %>%
-  st_transform(2039)
-# join the two countries 
-isr = st_union(isr, pa)
-plot(st_geometry(isr), col = NA, border = "red")
-
-# census tracts
-cs = st_read("data/census_shp_2012/israel_demog2012.shp")
 
 # 2.3 ACC/INV/MNC==========================================
 #**********************************************************
 
 # accelerators/investors/multi-national companies (?) = sponsors
 spon = readxl::read_excel("data/raw_geocode_acc_inv_mnc.xlsx")
+table(spon$type)
 colSums(is.na(spon))
-spon = filter(d, !(is.na(lon) | is.na(lat)))
+spon = filter(spon, !(is.na(lon) | is.na(lat)))
 dim(spon)  # 624
 spon = st_as_sf(spon, coords = c("lon", "lat"))
 spon = st_set_crs(spon, 4326)
@@ -102,8 +106,11 @@ plot(spon$geometry, add = TRUE)
 plot(spon[st_union(isr), ]$geometry, col = "blue", pch = 16, add = TRUE)
 spon = spon[st_buffer(st_union(isr), 5000), ]
 dim(spon)  # 623
+table(spon$type)
 
 # 2.4 osmdata==============================================
+#**********************************************************
+
 library("osmdata")
 library("sf")
 tv = osmdata::getbb("tel aviv", format_out = "sf_polygon")
@@ -168,8 +175,11 @@ dbSendQuery(conn, "CREATE DATABASE qual_gis;")
 dbDisconnect(conn)
 
 # connect to the newly created database, this time you can use user jannes
+
+# little update, I haven't created a user, therefore I am running as  the
+# postgres user
 conn = dbConnect(drv = PostgreSQL(), 
-                 user = "jannes",
+                 user = "postgres",
                  dbname = "qual_gis", 
                  port = 5432,
                  password = "jannes")
